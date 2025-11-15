@@ -70,19 +70,6 @@ cd [Project-Directory]
 # 2. Run the script using an Administrator Command Prompt
 python mitigation_dashboard.py
 
-## Screenshots
-
-![1](https://github.com/user-attachments/assets/83e2d9b1-6318-45c8-90cd-a6d1ead5d34b)
-
-![2](https://github.com/user-attachments/assets/aad67edc-d143-47d7-a1dc-924130b0206c)
-
-![3](https://github.com/user-attachments/assets/8aa17045-fb49-4b30-910e-261bceb5af50)
-
-![5](https://github.com/user-attachments/assets/b9402474-7c1c-44f2-b2e3-59a33cd1b04f)
-
-![4](https://github.com/user-attachments/assets/5a7eeffe-e892-4d88-8193-231bf6bdba1d)
-
-![6](https://github.com/user-attachments/assets/2799ad73-6571-4530-9a23-8d53646ff2a5)
 
 
 
