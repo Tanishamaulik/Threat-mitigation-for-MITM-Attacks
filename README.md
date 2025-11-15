@@ -69,10 +69,3 @@ cd [Project-Directory]
 
 # 2. Run the script using an Administrator Command Prompt
 python mitigation_dashboard.py
-
-
-
-
-
-
-
