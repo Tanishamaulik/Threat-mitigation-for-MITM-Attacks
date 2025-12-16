@@ -29,6 +29,59 @@ def log_message(message, color="black"):
 def update_status(text, color="gray"):
     """Updates the main status label."""
     status_label.config(text=f"Status: {text}", fg=color)
+    
+def detect_interface_for_ip(target_ip):
+    """
+    Robustly detects the network interface by:
+    1. Finding the Host IP that sees the target_ip in `arp -a`.
+    2. Finding the Interface Name associated with that Host IP in `netsh`.
+    """
+    try:
+        # Step 1: Find the local Interface IP (Host IP) from arp -a
+        arp_output = subprocess.check_output(['arp', '-a'], text=True)
+        host_ip = None
+        
+        # Split by "Interface:" to process each block
+        # Example line: "Interface: 192.168.56.1 --- 0x12"
+        blocks = arp_output.split('Interface:')
+        for block in blocks:
+            if target_ip in block:
+                # The first word of the block (after "Interface:") should be the Host IP
+                # We need to clean it up slightly
+                candidate_ip = block.strip().split()[0]
+                host_ip = candidate_ip
+                log_message(f"Found Host IP {host_ip} communicating with {target_ip}", "blue")
+                break
+        
+        if not host_ip:
+            log_message("Could not find Target IP in ARP table. Is the machine on?", "orange")
+            return None
+
+        # Step 2: Find the Interface Name for this Host IP using netsh
+        # We assume the interface name is quoted in the output
+        netsh_output = subprocess.check_output(['netsh', 'interface', 'ip', 'show', 'config'], text=True)
+        
+        current_interface = None
+        for line in netsh_output.splitlines():
+            line = line.strip()
+            # Start of a new interface block
+            if line.startswith('Configuration for interface'):
+                # Extract "Interface Name"
+                parts = line.split('"')
+                if len(parts) >= 2:
+                    current_interface = parts[1]
+            
+            # Check if this interface has the IP we found
+            if current_interface and f"IP Address:                       {host_ip}" in line:
+                 # Standard format has spaces. We can also try simple containment.
+                 return current_interface
+            elif current_interface and host_ip in line and "IP Address" in line:
+                 return current_interface
+                 
+    except Exception as e:
+        log_message(f"Interface Detection Error: {e}", "orange")
+        
+    return None
 
 
 # ==========================================================
@@ -43,34 +96,45 @@ import subprocess # Assuming this is imported at the top of your script
 # HOST_INTERFACE = "Ethernet 2"
 
 def mitigate_attack():
-    VICTIM_IP = "192.168.56.20"
-    CORRECT_MAC_RAW = "08-00-27-FC-7E-F9" 
-    HOST_INTERFACE = "Ethernet 2"
     
     # CRITICAL FIX: netsh requires hyphenated, lowercase MAC
-    netsh_mac = CORRECT_MAC_RAW.replace(':', '-').lower() 
+    netsh_mac = CORRECT_MAC.replace(':', '-').lower() 
     
-    # Use the list format for robust execution!
-    command_list = [
+    # 1. Try to DELETE the entry first to avoid "Object already exists" error
+    delete_command = [
+        "netsh", "interface", "ip", "delete", "neighbors", 
+        HOST_INTERFACE, VICTIM_IP
+    ]
+    
+    # 2. Command to ADD the static entry
+    add_command = [
         "netsh", "interface", "ip", "add", "neighbors", 
         HOST_INTERFACE, VICTIM_IP, netsh_mac
     ]
     
     try:
-        log_message("Attempting to lock ARP entry with NETSH (List Format)...", "orange")
+        log_message("Attempting to lock ARP entry with NETSH...", "orange")
+        log_message(f"Command: {' '.join(add_command)}", "black")
+
+        # Run DELETE (ignore errors if it doesn't exist)
+        subprocess.run(delete_command, capture_output=True, check=False)
         
-        # We use shell=False for security and robust execution with the list format
-        # Check=True ensures Python raises an error if the command fails
-        subprocess.run(command_list, check=True, timeout=5)
+        # Run ADD
+        result = subprocess.run(add_command, check=True, timeout=5, capture_output=True, text=True)
         
         # --- SUCCESS LOGS ---
         status_label.config(text="Status: MITIGATION SUCCESSFUL", fg="green")
         log_message(f"✅ Mitigation Success: ARP entry locked for {VICTIM_IP}.", "green")
         
     except subprocess.CalledProcessError as e:
-        # If it fails here, the interface name is almost certainly still wrong
+        # Capture the specific error output from netsh
+        error_output = e.stderr.strip() if e.stderr else e.stdout.strip() if e.stdout else "No output captured."
         status_label.config(text="Status: MITIGATION FAILED", fg="red")
-        log_message(f"❌ MITIGATION FAILED! CHECK INTERFACE NAME: '{HOST_INTERFACE}'", "red")
+        log_message(f"❌ MITIGATION FAILED! Error Code: {e.returncode}", "red")
+        log_message(f"DETAILS: {error_output}", "orange")
+        
+        if "Run as administrator" in error_output or e.returncode == 1:
+             log_message("👉 HINT: Try running this script as ADMINISTRATOR.", "blue")
         
     except Exception as e:
         log_message(f"❌ UNEXPECTED ERROR: {e}", "red")
@@ -162,6 +226,15 @@ detect_button.pack(side=tk.LEFT, padx=10)
 
 mitigate_button = tk.Button(button_frame, text="APPLY ARP LOCK (MITIGATE)", command=mitigate_attack, width=25, bg='#F44336', fg='white')
 mitigate_button.pack(side=tk.LEFT, padx=10)
+
+
+# --- Auto-Detect Interface on Startup ---
+detected = detect_interface_for_ip(VICTIM_IP)
+if detected:
+    HOST_INTERFACE = detected
+    log_message(f"✅ Auto-detected Interface: '{HOST_INTERFACE}' for subnet {VICTIM_IP}", "green")
+else:
+    log_message(f"⚠️ Could not auto-detect interface. Using default: '{HOST_INTERFACE}'", "orange")
 
 # Start the GUI loop
 window.mainloop()
